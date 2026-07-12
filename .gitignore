@@ -1,0 +1,21 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Generated reports (don't commit real borrower data!)
+*_EUF_Report.xlsx
+portfolio_report.xlsx
+onepager.xlsx
+summary.xlsx
+
+# Real statement data — never commit actual customer bank statements
+/statements/
+/reports_download/
+loan_master.csv

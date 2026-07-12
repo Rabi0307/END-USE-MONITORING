@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>EUF Portfolio Scanner</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root{
+    --navy:#1F3864; --navy-deep:#132242; --paper:#F6F7F9; --ink:#1B1F27;
+    --line:#DBE0E8; --ok:#0F6B3A; --ok-bg:#E4F5EA; --bad:#9C0006; --bad-bg:#FDE7E7;
+    --amber:#8A5A00; --amber-bg:#FFF3D9; --mono:'IBM Plex Mono','Consolas',monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Inter',-apple-system,Segoe UI,Roboto,sans-serif;background:var(--paper);color:var(--ink);}
+  header{background:var(--navy);color:#fff;padding:28px 32px;}
+  header h1{margin:0 0 4px;font-size:22px;letter-spacing:.2px;}
+  header p{margin:0;color:#B9C6DE;font-size:13px;}
+  .wrap{max-width:1180px;margin:0 auto;padding:24px 32px 60px;}
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:22px 24px;margin-bottom:20px;}
+  .card h2{margin:0 0 14px;font-size:14px;text-transform:uppercase;letter-spacing:.08em;color:var(--navy);}
+  .row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;}
+  .field{display:flex;flex-direction:column;gap:6px;font-size:13px;}
+  .field label{font-weight:600;color:#42506B;}
+  .field input[type=text],.field input[type=number],.field select{
+    border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:13px;min-width:180px;font-family:inherit;
+  }
+  .btn{background:var(--navy);color:#fff;border:none;border-radius:6px;padding:10px 18px;font-size:13px;font-weight:600;
+       cursor:pointer;transition:background .15s;}
+  .btn:hover{background:var(--navy-deep)}
+  .btn.secondary{background:#fff;color:var(--navy);border:1px solid var(--navy);}
+  .btn.secondary:hover{background:#EEF2F8}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .filebtn{position:relative;overflow:hidden;display:inline-block;}
+  .filebtn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
+  #folderLabel,#mapLabel{font-size:12px;color:#5A6B8C;margin-top:6px;}
+  #progressWrap{margin-top:16px;display:none;}
+  #progressBar{height:8px;background:#E4E9F2;border-radius:4px;overflow:hidden;}
+  #progressFill{height:100%;width:0;background:var(--navy);transition:width .2s;}
+  #progressText{font-size:12px;color:#5A6B8C;margin-top:6px;font-family:var(--mono);}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;}
+  .kpi{border:1px solid var(--line);border-radius:8px;padding:14px 16px;}
+  .kpi .num{font-family:var(--mono);font-size:24px;font-weight:700;color:var(--navy);}
+  .kpi .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6B7690;margin-top:2px;}
+  .kpi.bad .num{color:var(--bad)}
+  .kpi.ok .num{color:var(--ok)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  th{background:#EEF1F6;color:#42506B;text-align:left;padding:8px 10px;font-weight:700;position:sticky;top:0;
+     border-bottom:1px solid var(--line);white-space:nowrap;}
+  td{padding:7px 10px;border-bottom:1px solid #EEF0F4;white-space:nowrap;}
+  tr:nth-child(even) td{background:#FAFBFC;}
+  .status-clean{background:var(--ok-bg)!important;color:var(--ok);font-weight:700;border-radius:4px;padding:2px 8px;}
+  .status-review{background:var(--bad-bg)!important;color:var(--bad);font-weight:700;border-radius:4px;padding:2px 8px;}
+  .tablewrap{max-height:440px;overflow:auto;border:1px solid var(--line);border-radius:8px;}
+  .exportbar{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;}
+  .note{font-size:12px;color:#6B7690;line-height:1.5;margin-top:10px;}
+  .tag{display:inline-block;background:#EEF2F8;color:var(--navy);font-size:11px;font-weight:700;border-radius:4px;
+       padding:2px 7px;margin-left:8px;}
+  .errbox{background:var(--amber-bg);border:1px solid #F0D9A8;border-radius:8px;padding:12px 14px;font-size:12.5px;
+          color:var(--amber);margin-top:12px;max-height:160px;overflow:auto;}
+  @media print{
+    header,.card.controls,.exportbar,.field,#processBtn{display:none!important;}
+    .tablewrap{max-height:none;overflow:visible;}
+    body{background:#fff}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>EUF Portfolio Scanner <span class="tag">runs entirely in your browser</span></h1>
+  <p>Post-disbursement end-use-of-funds analysis across a whole folder of bank statements — nothing is uploaded to any server.</p>
+</header>
+
+<div class="wrap">
+
+  <div class="card controls">
+    <h2>1 · Select data</h2>
+    <div class="row">
+      <div class="field">
+        <label>Folder of statements</label>
+        <div class="filebtn btn">Choose folder…
+          <input type="file" id="folderInput" webkitdirectory directory multiple>
+        </div>
+        <span id="folderLabel">No folder selected</span>
+      </div>
+      <div class="field">
+        <label>Optional: loan master mapping (CSV)</label>
+        <div class="filebtn btn secondary">Choose CSV…
+          <input type="file" id="mapInput" accept=".csv">
+        </div>
+        <span id="mapLabel">No mapping — amounts will be auto-detected</span>
+      </div>
+      <div class="field">
+        <label>Default loan type</label>
+        <select id="loanType"><option value="LAP">LAP</option><option value="HL">Home Loan</option></select>
+      </div>
+      <div class="field">
+        <label>Monitoring window (days)</label>
+        <input type="number" id="windowDays" value="90" min="1">
+      </div>
+      <div class="field">
+        <button class="btn" id="processBtn" disabled>Process folder</button>
+      </div>
+    </div>
+    <div id="progressWrap">
+      <div id="progressBar"><div id="progressFill"></div></div>
+      <div id="progressText">—</div>
+    </div>
+    <p class="note">Mapping CSV columns: <code>filename, loan_amount, loan_type, lender_hint, borrower_name, loan_account_no</code>.
+    <code>filename</code> can match either the statement's own file name or its parent folder name (handy when each loan
+    has its own subfolder, e.g. <code>SBFCLAP0000376039/report.xlsx</code>).</p>
+  </div>
+
+  <div class="card" id="resultsCard" style="display:none;">
+    <h2>2 · Portfolio summary</h2>
+    <div class="kpis" id="kpiRow"></div>
+    <div class="tablewrap" style="margin-top:18px;">
+      <table id="summaryTable"><thead></thead><tbody></tbody></table>
+    </div>
+    <div id="errBoxWrap"></div>
+    <div class="exportbar">
+      <button class="btn" id="btnExcel">Download Excel (.xlsx)</button>
+      <button class="btn secondary" id="btnWord">Download Word (.doc)</button>
+      <button class="btn secondary" id="btnPdf">Print / Save as PDF</button>
+    </div>
+    <p class="note">Output file name is taken from the folder you selected. Word export is an HTML file saved with a
+    .doc extension — Word opens it natively, but treat it as a shareable summary rather than a native .docx if you
+    need Word-specific features like styles/track-changes.</p>
+  </div>
+
+  <div class="card" id="flagsCard" style="display:none;">
+    <h2>3 · Consolidated red-flag register</h2>
+    <div class="tablewrap">
+      <table id="flagsTable"><thead></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const END_USE_MAP = {
+  "Direct Deposit":{Bucket:"Incoming Funds / Not Applicable",Risk:"Low"},
+  "Cheque Deposit":{Bucket:"Incoming Funds / Not Applicable",Risk:"Low"},
+  "Cash Deposit":{Bucket:"Incoming Funds / Not Applicable",Risk:"Low"},
+  "Refunds":{Bucket:"Incoming Funds / Not Applicable",Risk:"Low"},
+  "Interest Received":{Bucket:"Incoming Funds / Not Applicable",Risk:"Low"},
+  "Dividends":{Bucket:"Incoming Funds / Not Applicable",Risk:"Low"},
+  "Investment Income":{Bucket:"Incoming Funds / Not Applicable",Risk:"Low"},
+  "Rent Received":{Bucket:"Incoming Funds / Not Applicable",Risk:"Low"},
+  "Salary Received":{Bucket:"Incoming Funds / Not Applicable",Risk:"Low"},
+  "Subsidy":{Bucket:"Incoming Funds / Not Applicable",Risk:"Low"},
+  "Loan Disbursed":{Bucket:"Other Loan Disbursement (New Debt)",Risk:"High"},
+  "EMI and Loans":{Bucket:"Debt Servicing (Existing Loans)",Risk:"Medium"},
+  "Emi_Paid":{Bucket:"Debt Servicing (Existing Loans)",Risk:"Medium"},
+  "Home Loan":{Bucket:"Debt Servicing (Existing Loans)",Risk:"Medium"},
+  "Card Payment":{Bucket:"Debt Servicing (Existing Loans)",Risk:"Medium"},
+  "Bounced I/W ECS":{Bucket:"Bounced Payment / Dishonour",Risk:"High"},
+  "Bounced I/W ECS Charges":{Bucket:"Bounced Payment / Dishonour",Risk:"High"},
+  "Bounced O/W Cheque":{Bucket:"Bounced Payment / Dishonour",Risk:"High"},
+  "Cash Withdrawals":{Bucket:"Cash Withdrawal",Risk:"High"},
+  "Cheque Withdrawal":{Bucket:"Cash Withdrawal",Risk:"High"},
+  "Gold":{Bucket:"Investment / Gold Purchase",Risk:"High"},
+  "Investment Expense":{Bucket:"Investment / Gold Purchase",Risk:"High"},
+  "Fixed Deposit":{Bucket:"Investment / Gold Purchase",Risk:"Medium"},
+  "Groceries and Shopping":{Bucket:"Household / Personal Spend",Risk:"Medium"},
+  "Shopping":{Bucket:"Household / Personal Spend",Risk:"Medium"},
+  "Utilities and Bills":{Bucket:"Household / Personal Spend",Risk:"Medium"},
+  "Dining Restaurant and Entertainment":{Bucket:"Household / Personal Spend",Risk:"Medium"},
+  "Entertainment":{Bucket:"Household / Personal Spend",Risk:"Medium"},
+  "Hotel and Travel":{Bucket:"Household / Personal Spend",Risk:"Medium"},
+  "Medical":{Bucket:"Household / Personal Spend",Risk:"Low"},
+  "Insurance Premium":{Bucket:"Household / Personal Spend",Risk:"Low"},
+  "Rent Paid":{Bucket:"Household / Personal Spend",Risk:"Medium"},
+  "Fuel":{Bucket:"Household / Personal Spend",Risk:"Low"},
+  "Bank Fees and Charges":{Bucket:"Bank Charges",Risk:"Low"},
+  "Bank_fees_and_Charges":{Bucket:"Bank Charges",Risk:"Low"},
+  "External Transfers":{Bucket:"Third-Party Transfer (Unverified)",Risk:"Medium"},
+  "Transfer to UPI":{Bucket:"Third-Party Transfer (Unverified)",Risk:"Medium"},
+};
+const DEFAULT_BUCKET = {Bucket:"Uncategorised",Risk:"Medium"};
+const BOUNCE_CATEGORIES = new Set(["Bounced I/W ECS","Bounced I/W ECS Charges","Bounced O/W Cheque"]);
+function resolveCategory(cat){
+  if (END_USE_MAP[cat]) return END_USE_MAP[cat];
+  if (typeof cat === 'string' && cat.includes(',')) {
+    for (const part of cat.split(',')) {
+      const p = part.trim();
+      if (END_USE_MAP[p]) return END_USE_MAP[p];
+    }
+  }
+  return DEFAULT_BUCKET;
+}
+function isBounceCategory(cat){
+  if (BOUNCE_CATEGORIES.has(cat)) return true;
+  if (typeof cat === 'string') { for (const b of BOUNCE_CATEGORIES) if (cat.includes(b)) return true; }
+  return false;
+}
+const CASH_WITHDRAWAL_FLAG_PCT = 0.05;
+const LARGE_TXN_FLAG_PCT = 0.10;
+const SAME_DAY_OUTFLOW_FLAG_PCT = 0.15;
+const MIN_FLAG_AMOUNT = 1000;
+
+let folderName = "portfolio";
+let mapping = {};   // key: filename or folder name (lowercased) -> row
+let portfolioResults = [];
+let allFlags = [];
+let bucketTotals = {};
+let errorRows = [];
+
+const folderInput = document.getElementById('folderInput');
+const mapInput = document.getElementById('mapInput');
+const processBtn = document.getElementById('processBtn');
+let selectedFiles = [];
+
+folderInput.addEventListener('change', (e) => {
+  selectedFiles = Array.from(e.target.files).filter(f => /\.xlsx?$/i.test(f.name) && !f.name.startsWith('~$'));
+  if (selectedFiles.length) {
+    const firstPath = selectedFiles[0].webkitRelativePath || selectedFiles[0].name;
+    folderName = firstPath.split('/')[0] || "portfolio";
+    document.getElementById('folderLabel').textContent = `${selectedFiles.length} Excel file(s) found in "${folderName}"`;
+    processBtn.disabled = false;
+  } else {
+    document.getElementById('folderLabel').textContent = "No Excel files found in that folder";
+    processBtn.disabled = true;
+  }
+});
+
+mapInput.addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  Papa.parse(f, {
+    header: true, skipEmptyLines: true,
+    complete: (res) => {
+      mapping = {};
+      res.data.forEach(row => {
+        const key = (row.filename || '').trim().toLowerCase();
+        if (key) mapping[key] = row;
+      });
+      document.getElementById('mapLabel').textContent = `Loaded ${Object.keys(mapping).length} mapping row(s)`;
+    }
+  });
+});
+
+function excelSerialToDate(v) {
+  if (v instanceof Date) return v;
+  if (typeof v === 'number') {
+    const d = new Date(Math.round((v - 25569) * 86400 * 1000));
+    return d;
+  }
+  const d2 = new Date(v);
+  return isNaN(d2) ? null : d2;
+}
+
+function pickSheet(workbook) {
+  const names = workbook.SheetNames;
+  const lower = names.map(n => n.toLowerCase());
+  let idx = lower.indexOf('allaccountxns');
+  if (idx === -1) idx = lower.indexOf('accountxns');
+  if (idx === -1) idx = lower.findIndex(n => n.includes('transaction') || n.includes('bank account'));
+  if (idx === -1) idx = 0;
+  return workbook.Sheets[names[idx]];
+}
+
+function classifyAndFlag(rows, loanAmount) {
+  // normalise + sort
+  let txns = rows.map(r => ({
+    date: excelSerialToDate(r.sDate),
+    amount: parseFloat(r.sAmount),
+    crdr: (r.sCreditOrDebit || '').toString().toUpperCase(),
+    narration: r.sNarration || '',
+    counterparty: r.counter_party || '',
+    category: r.sCategory || '',
+    excluded: r.is_excluded === true || r.is_excluded === 'TRUE',
+  })).filter(t => t.date && !isNaN(t.amount) && !t.excluded);
+  txns.sort((a,b) => a.date - b.date);
+
+  // disbursement: largest credit closest to loanAmount, else largest credit
+  const credits = txns.filter(t => t.crdr === 'CREDIT');
+  let disb = null;
+  if (credits.length) {
+    if (loanAmount) {
+      let best = null, bestDiff = Infinity;
+      credits.forEach(c => {
+        const diff = Math.abs(c.amount - loanAmount) / loanAmount;
+        if (diff < bestDiff) { bestDiff = diff; best = c; }
+      });
+      disb = (bestDiff <= 0.5) ? best : credits.reduce((a,b)=>a.amount>b.amount?a:b);
+    } else {
+      disb = credits.reduce((a,b)=>a.amount>b.amount?a:b);
+    }
+  }
+  const effectiveAmount = loanAmount || (disb ? disb.amount : 0);
+  const disbDate = disb ? disb.date : (txns.length ? txns[0].date : new Date());
+
+  txns.forEach(t => {
+    const map = resolveCategory(t.category);
+    t.bucket = map.Bucket;
+    t.risk = map.Risk;
+    t.daysFromDisb = Math.floor((t.date - disbDate) / 86400000);
+    let reasons = [];
+    if (isBounceCategory(t.category))
+      reasons.push(`Cheque/ECS bounce or dishonour event ('${t.category}') — review immediately`);
+    if (t.crdr === 'DEBIT' && t.daysFromDisb >= 0 && effectiveAmount > 0) {
+      const pct = t.amount / effectiveAmount;
+      if (t.category === 'Cash Withdrawals' && pct >= CASH_WITHDRAWAL_FLAG_PCT)
+        reasons.push(`Cash withdrawal = ${(pct*100).toFixed(1)}% of loan amount`);
+      if (pct >= LARGE_TXN_FLAG_PCT)
+        reasons.push(`Single debit = ${(pct*100).toFixed(1)}% of loan amount (>10% threshold)`);
+      if (t.daysFromDisb <= 1 && pct >= SAME_DAY_OUTFLOW_FLAG_PCT)
+        reasons.push('Large outflow within 24 hrs of disbursement');
+      if (t.category === 'Gold' && t.amount >= MIN_FLAG_AMOUNT)
+        reasons.push('Funds routed to gold/investment purchase');
+    }
+    t.redFlag = reasons.length > 0;
+    t.flagReason = reasons.join('; ');
+  });
+
+  const post = txns.filter(t => t.daysFromDisb >= 0 && t.crdr === 'DEBIT');
+  const byBucket = {};
+  post.forEach(t => {
+    byBucket[t.bucket] = byBucket[t.bucket] || {amount:0,count:0};
+    byBucket[t.bucket].amount += t.amount;
+    byBucket[t.bucket].count += 1;
+  });
+  const bucketList = Object.entries(byBucket)
+    .map(([bucket,v]) => ({bucket, amount:v.amount, count:v.count, pct: effectiveAmount ? v.amount/effectiveAmount : 0}))
+    .sort((a,b) => b.amount - a.amount);
+
+  return { txns, disb, effectiveAmount, disbDate, bucketList, post };
+}
+
+async function readFileAsWorkbook(file) {
+  const buf = await file.arrayBuffer();
+  return XLSX.read(buf, {type:'array', cellDates:true});
+}
+
+function fmtDate(d){ if(!d) return ''; return d.toISOString().slice(0,10); }
+function fmtMoney(n){ return (n||0).toLocaleString('en-IN',{maximumFractionDigits:0}); }
+function fmtPct(n){ return ((n||0)*100).toFixed(1)+'%'; }
+
+processBtn.addEventListener('click', async () => {
+  processBtn.disabled = true;
+  const progWrap = document.getElementById('progressWrap');
+  const progFill = document.getElementById('progressFill');
+  const progText = document.getElementById('progressText');
+  progWrap.style.display = 'block';
+
+  portfolioResults = []; allFlags = []; bucketTotals = {}; errorRows = [];
+  const defaultLoanType = document.getElementById('loanType').value;
+  const windowDays = parseInt(document.getElementById('windowDays').value) || 90;
+
+  for (let i = 0; i < selectedFiles.length; i++) {
+    const file = selectedFiles[i];
+    const relPath = file.webkitRelativePath || file.name;
+    const parts = relPath.split('/');
+    const fname = parts[parts.length-1];
+    const parentFolder = parts.length > 2 ? parts[parts.length-2] : '';
+    const mapRow = mapping[fname.toLowerCase()] || mapping[(parentFolder||'').toLowerCase()] || null;
+
+    try {
+      const wb = await readFileAsWorkbook(file);
+      const sheet = pickSheet(wb);
+      const rows = XLSX.utils.sheet_to_json(sheet, {defval:null});
+      const loanAmount = mapRow && mapRow.loan_amount ? parseFloat(mapRow.loan_amount) : null;
+      const loanType = (mapRow && mapRow.loan_type) ? mapRow.loan_type.toUpperCase() : defaultLoanType;
+      const borrower = (mapRow && mapRow.borrower_name) || '';
+      const lan = (mapRow && mapRow.loan_account_no) || parentFolder || '';
+
+      const { disb, effectiveAmount, bucketList, post } = classifyAndFlag(rows, loanAmount);
+      if (!disb) throw new Error('No CREDIT transactions found — cannot identify a disbursement.');
+
+      const flagged = post.filter(t => t.redFlag);
+      const flaggedAmt = flagged.reduce((s,t)=>s+t.amount,0);
+      const totalUtilised = post.reduce((s,t)=>s+t.amount,0);
+      const topBucket = bucketList[0] || {bucket:'',pct:0};
+
+      portfolioResults.push({
+        file: relPath, borrower, lan, loanType,
+        amountSource: mapRow ? 'Matched (mapping)' : 'Auto-detected',
+        disbDate: disb.date, disbAmount: effectiveAmount,
+        totalUtilised, pctUtilised: effectiveAmount ? totalUtilised/effectiveAmount : 0,
+        topBucket: topBucket.bucket, topBucketPct: topBucket.pct,
+        redFlagCount: flagged.length, redFlagAmount: flaggedAmt,
+        status: flagged.length > 0 ? 'REVIEW REQUIRED' : 'CLEAN',
+      });
+
+      flagged.forEach(t => allFlags.push({
+        file: relPath, borrower, date: t.date, amount: t.amount,
+        narration: t.narration, counterparty: t.counterparty, reason: t.flagReason,
+      }));
+
+      bucketList.forEach(b => { bucketTotals[b.bucket] = (bucketTotals[b.bucket]||0) + b.amount; });
+
+    } catch (err) {
+      errorRows.push({file: relPath, error: err.message});
+    }
+
+    if ((i+1) % 10 === 0 || i === selectedFiles.length-1) {
+      progFill.style.width = `${((i+1)/selectedFiles.length*100).toFixed(0)}%`;
+      progText.textContent = `Processed ${i+1} / ${selectedFiles.length}  (errors: ${errorRows.length})`;
+      await new Promise(r => setTimeout(r, 0)); // let UI repaint
+    }
+  }
+
+  renderResults();
+  processBtn.disabled = false;
+});
+
+function renderResults() {
+  document.getElementById('resultsCard').style.display = 'block';
+  document.getElementById('flagsCard').style.display = 'block';
+
+  const nOk = portfolioResults.length;
+  const nFlagged = portfolioResults.filter(r => r.status === 'REVIEW REQUIRED').length;
+  const totalDisb = portfolioResults.reduce((s,r)=>s+r.disbAmount,0);
+  const totalFlagAmt = portfolioResults.reduce((s,r)=>s+r.redFlagAmount,0);
+
+  const kpiRow = document.getElementById('kpiRow');
+  kpiRow.innerHTML = `
+    <div class="kpi"><div class="num">${selectedFiles.length}</div><div class="lbl">Files scanned</div></div>
+    <div class="kpi ok"><div class="num">${nOk - nFlagged}</div><div class="lbl">Clean</div></div>
+    <div class="kpi bad"><div class="num">${nFlagged}</div><div class="lbl">Review required</div></div>
+    <div class="kpi"><div class="num">${errorRows.length}</div><div class="lbl">Errors</div></div>
+    <div class="kpi"><div class="num">₹${fmtMoney(totalDisb)}</div><div class="lbl">Total disbursed</div></div>
+    <div class="kpi bad"><div class="num">₹${fmtMoney(totalFlagAmt)}</div><div class="lbl">Flagged amount</div></div>
+  `;
+
+  const headers = ["File","Borrower","Loan A/C No.","Loan Type","Amount Source","Disb. Date",
+                   "Disbursed Amt","Utilised","% Utilised","Top Bucket","Flags","Flag Amt","Status"];
+  const thead = document.querySelector('#summaryTable thead');
+  thead.innerHTML = '<tr>' + headers.map(h=>`<th>${h}</th>`).join('') + '</tr>';
+  const tbody = document.querySelector('#summaryTable tbody');
+  tbody.innerHTML = portfolioResults.map(r => `
+    <tr>
+      <td>${r.file}</td><td>${r.borrower}</td><td>${r.lan}</td><td>${r.loanType}</td>
+      <td>${r.amountSource}</td><td>${fmtDate(r.disbDate)}</td>
+      <td>${fmtMoney(r.disbAmount)}</td><td>${fmtMoney(r.totalUtilised)}</td><td>${fmtPct(r.pctUtilised)}</td>
+      <td>${r.topBucket}</td><td>${r.redFlagCount}</td><td>${fmtMoney(r.redFlagAmount)}</td>
+      <td><span class="${r.status==='CLEAN'?'status-clean':'status-review'}">${r.status}</span></td>
+    </tr>`).join('');
+
+  const flagHeaders = ["File","Borrower","Date","Amount","Narration","Counterparty","Flag Reason"];
+  document.querySelector('#flagsTable thead').innerHTML = '<tr>' + flagHeaders.map(h=>`<th>${h}</th>`).join('') + '</tr>';
+  document.querySelector('#flagsTable tbody').innerHTML = allFlags.length ? allFlags.map(f => `
+    <tr><td>${f.file}</td><td>${f.borrower}</td><td>${fmtDate(f.date)}</td><td>${fmtMoney(f.amount)}</td>
+    <td>${f.narration}</td><td>${f.counterparty}</td><td>${f.reason}</td></tr>`).join('')
+    : '<tr><td colspan="7">No red-flagged transactions across the portfolio.</td></tr>';
+
+  const errWrap = document.getElementById('errBoxWrap');
+  errWrap.innerHTML = errorRows.length
+    ? `<div class="errbox"><strong>${errorRows.length} file(s) could not be processed:</strong><br>` +
+      errorRows.map(e => `${e.file} — ${e.error}`).join('<br>') + `</div>`
+    : '';
+}
+
+document.getElementById('btnExcel').addEventListener('click', () => {
+  const wb = XLSX.utils.book_new();
+
+  const kpiData = [
+    ["PORTFOLIO END-USE OF FUNDS — SUMMARY DASHBOARD"],
+    [],
+    ["Files Scanned", selectedFiles.length],
+    ["Loans Processed Successfully", portfolioResults.length],
+    ["Files with Errors", errorRows.length],
+    ["Loans Flagged — Review Required", portfolioResults.filter(r=>r.status==='REVIEW REQUIRED').length],
+    ["Total Disbursed (Rs.)", portfolioResults.reduce((s,r)=>s+r.disbAmount,0)],
+    ["Total Red-Flagged Amount (Rs.)", portfolioResults.reduce((s,r)=>s+r.redFlagAmount,0)],
+    ["Report Generated", new Date().toISOString()],
+  ];
+  const wsDash = XLSX.utils.aoa_to_sheet(kpiData);
+  XLSX.utils.book_append_sheet(wb, wsDash, "Dashboard");
+
+  const summaryHeaders = ["File","Borrower","Loan A/C No.","Loan Type","Amount Source","Disbursement Date",
+                          "Disbursed Amount","Total Utilised","% Utilised","Top End-Use Bucket","Top Bucket %",
+                          "Red Flag Count","Red Flag Amount","Status"];
+  const summaryRows = portfolioResults.map(r => [
+    r.file, r.borrower, r.lan, r.loanType, r.amountSource, fmtDate(r.disbDate), r.disbAmount,
+    r.totalUtilised, r.pctUtilised, r.topBucket, r.topBucketPct, r.redFlagCount, r.redFlagAmount, r.status
+  ]);
+  const wsSummary = XLSX.utils.aoa_to_sheet([summaryHeaders, ...summaryRows]);
+  XLSX.utils.book_append_sheet(wb, wsSummary, "Portfolio Summary");
+
+  const flagHeaders = ["File","Borrower","Date","Amount","Narration","Counterparty","Flag Reason"];
+  const flagRows = allFlags.map(f => [f.file, f.borrower, fmtDate(f.date), f.amount, f.narration, f.counterparty, f.reason]);
+  const wsFlags = XLSX.utils.aoa_to_sheet([flagHeaders, ...(flagRows.length?flagRows:[["(none)"]])]);
+  XLSX.utils.book_append_sheet(wb, wsFlags, "All Red Flags");
+
+  const bucketRows = Object.entries(bucketTotals).sort((a,b)=>b[1]-a[1]).map(([b,a])=>[b,a]);
+  const wsBucket = XLSX.utils.aoa_to_sheet([["End-Use Bucket","Total Amount (Rs.)"], ...bucketRows]);
+  XLSX.utils.book_append_sheet(wb, wsBucket, "Category Aggregate");
+
+  const errRows = errorRows.map(e => [e.file, e.error]);
+  const wsErr = XLSX.utils.aoa_to_sheet([["File","Error"], ...(errRows.length?errRows:[["(none)",""]])]);
+  XLSX.utils.book_append_sheet(wb, wsErr, "Errors");
+
+  XLSX.writeFile(wb, `${folderName}.xlsx`);
+});
+
+document.getElementById('btnWord').addEventListener('click', () => {
+  const rowsHtml = portfolioResults.map(r => `
+    <tr>
+      <td>${r.file}</td><td>${r.borrower}</td><td>${r.lan}</td><td>${r.loanType}</td>
+      <td>${fmtDate(r.disbDate)}</td><td>${fmtMoney(r.disbAmount)}</td><td>${fmtPct(r.pctUtilised)}</td>
+      <td>${r.topBucket}</td><td>${r.redFlagCount}</td><td>${r.status}</td>
+    </tr>`).join('');
+  const html = `
+    <html><head><meta charset="utf-8"><title>${folderName}</title></head>
+    <body style="font-family:Arial,sans-serif;">
+      <h1 style="color:#1F3864;">Post-Disbursement End-Use of Funds — Portfolio Report</h1>
+      <p>Folder: <b>${folderName}</b> &nbsp; Files scanned: <b>${selectedFiles.length}</b> &nbsp;
+         Flagged: <b>${portfolioResults.filter(r=>r.status==='REVIEW REQUIRED').length}</b></p>
+      <table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;font-size:11px;width:100%;">
+        <tr style="background:#1F3864;color:#fff;">
+          <th>File</th><th>Borrower</th><th>Loan A/C No.</th><th>Type</th><th>Disb. Date</th>
+          <th>Disbursed</th><th>% Utilised</th><th>Top Bucket</th><th>Flags</th><th>Status</th>
+        </tr>
+        ${rowsHtml}
+      </table>
+    </body></html>`;
+  const blob = new Blob(['\ufeff', html], {type: 'application/msword'});
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `${folderName}.doc`;
+  link.click();
+});
+
+document.getElementById('btnPdf').addEventListener('click', () => { window.print(); });
+</script>
+</body>
+</html>
